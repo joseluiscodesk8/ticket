@@ -8,12 +8,16 @@
     "start": "next start",
     "lint": "eslint"
   },
+  "allowScripts": {
+    "unrs-resolver@1.12.2": true
+  },
   "dependencies": {
     "@ai-sdk/google": "^4.0.70",
     "ai": "^7.0.101",
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "sass": "^1.104.1"
   },
   "devDependencies": {
     "@types/node": "^20",
