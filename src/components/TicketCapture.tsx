@@ -13,11 +13,13 @@ import {
 import {
   CameraIcon,
   DollarIcon,
-  ImageIcon,
   PhoneIcon,
   PinIcon,
   TypewriterIcon,
+  WhatsAppIcon,
+  BillIcon,
 } from "./icons";
+import { normalizeAddress } from "@/lib/address";
 
 const WHATSAPP_NUMBER = "3001377118";
 
@@ -66,7 +68,8 @@ const compressImage = (file: File, maxDim = 1200, quality = 0.85) =>
 
 export default function TicketCapture({ route }: { route: Route }) {
   const cameraRef = useRef<HTMLInputElement>(null);
-  const galleryRef = useRef<HTMLInputElement>(null);
+  // Galería deshabilitada por ahora
+  // const galleryRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phoneMenuOpen, setPhoneMenuOpen] = useState(false);
@@ -123,7 +126,7 @@ export default function TicketCapture({ route }: { route: Route }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al transcribir");
       updateActive(route.id, {
-        address: data.address ?? "",
+        address: normalizeAddress(data.address ?? ""),
         phone: data.phone ?? "",
         price: data.price ?? "",
       });
@@ -174,6 +177,7 @@ export default function TicketCapture({ route }: { route: Route }) {
         >
           <CameraIcon />
         </button>
+        {/*
         <button
           type="button"
           className={styles.iconBtn}
@@ -183,6 +187,7 @@ export default function TicketCapture({ route }: { route: Route }) {
         >
           <ImageIcon />
         </button>
+        */}
       </div>
 
       <input
@@ -197,6 +202,7 @@ export default function TicketCapture({ route }: { route: Route }) {
           e.target.value = "";
         }}
       />
+      {/*
       <input
         ref={galleryRef}
         type="file"
@@ -208,6 +214,7 @@ export default function TicketCapture({ route }: { route: Route }) {
           e.target.value = "";
         }}
       />
+      */}
 
       {route.photos.length > 0 && (
         <>
@@ -238,12 +245,21 @@ export default function TicketCapture({ route }: { route: Route }) {
             className={styles.btn}
             onClick={transcribeActive}
             disabled={loading}
+            aria-busy={loading}
           >
-            <TypewriterIcon />
-            {loading ? "Transcribiendo..." : "Transcribir foto"}
+            <motion.span
+              style={{ display: "inline-flex" }}
+              animate={loading ? { y: [0, -3, 2, -2, 0] } : { y: 0 }}
+              transition={{
+                duration: 0.45,
+                repeat: loading ? Infinity : 0,
+                ease: "easeInOut",
+              }}
+            >
+              <TypewriterIcon />
+            </motion.span>
           </button>
 
-          {loading && <p className={styles.loading}>Transcribiendo...</p>}
           {error && <p className={styles.error}>{error}</p>}
         </>
       )}
@@ -256,6 +272,13 @@ export default function TicketCapture({ route }: { route: Route }) {
               type="text"
               value={active?.address ?? ""}
               onChange={(e) => updateActive(route.id, { address: e.target.value })}
+              onBlur={() => {
+                if (route.photos[route.activeIndex]?.address) {
+                  updateActive(route.id, {
+                    address: normalizeAddress(route.photos[route.activeIndex].address),
+                  });
+                }
+              }}
               placeholder={MISSING.address}
               disabled={!active}
             />
@@ -310,11 +333,18 @@ export default function TicketCapture({ route }: { route: Route }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setPhoneMenuOpen(false)}
+                  aria-label="Enviar a WhatsApp"
+                  title="Enviar a WhatsApp"
                 >
-                  WhatsApp
+                  <WhatsAppIcon />
                 </a>
-                <a href={telLink()} onClick={() => setPhoneMenuOpen(false)}>
-                  Llamar
+                <a
+                  href={telLink()}
+                  onClick={() => setPhoneMenuOpen(false)}
+                  aria-label="Llamar"
+                  title="Llamar"
+                >
+                  <PhoneIcon />
                 </a>
               </motion.div>
             )}
@@ -353,7 +383,7 @@ export default function TicketCapture({ route }: { route: Route }) {
               onClick={() => setPriceMenuOpen((v) => !v)}
             >
               {active?.payment === "E" ? (
-                "E"
+                <BillIcon />
               ) : active?.payment === "T" ? (
                 "T"
               ) : (
@@ -376,6 +406,8 @@ export default function TicketCapture({ route }: { route: Route }) {
                     updateActive(route.id, { payment: "T" });
                     setPriceMenuOpen(false);
                   }}
+                  aria-label="Transferencia"
+                  title="Transferencia"
                 >
                   T
                 </button>
@@ -385,8 +417,10 @@ export default function TicketCapture({ route }: { route: Route }) {
                     updateActive(route.id, { payment: "E" });
                     setPriceMenuOpen(false);
                   }}
+                  aria-label="Efectivo"
+                  title="Efectivo"
                 >
-                  E
+                  <BillIcon />
                 </button>
               </motion.div>
             )}

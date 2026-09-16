@@ -54,7 +54,12 @@ export default function Routes() {
       </div>
 
       {routes.map((route) => (
-        <div key={route.id} className={styles.route}>
+        <div
+          key={route.id}
+          className={`${styles.route} ${
+            expandedId === route.id ? styles.routeOpen : ""
+          }`}
+        >
           <div className={styles.routeHeader}>
             <button
               type="button"
