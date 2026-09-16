@@ -1,10 +1,10 @@
-import TicketCapture from "@/components/TicketCapture";
+import Routes from "@/components/Routes";
 
 export default function Home() {
   return (
     <main>
-      <h1 className="title">Transcripción de tickets</h1>
-      <TicketCapture />
+      <h1 className="title">Patinando Todos Los Marditos Días</h1>
+      <Routes />
     </main>
   );
 }
