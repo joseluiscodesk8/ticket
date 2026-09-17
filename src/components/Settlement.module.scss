@@ -114,6 +114,10 @@
   color: var(--c-green-dark);
 }
 
+.summaryTransfer {
+  color: var(--c-blue-dark);
+}
+
 .empty {
   margin: 0;
   font-size: 0.9rem;
@@ -159,6 +163,15 @@
   flex-shrink: 0;
 }
 
+.amountTransfer {
+  color: var(--c-blue-dark);
+}
+
+.transferRow {
+  border-left: 4px solid var(--c-blue);
+  padding-left: 10px;
+}
+
 .address {
   color: var(--c-text-soft);
   text-align: right;
@@ -168,17 +181,26 @@
   max-width: 220px;
 }
 
-.transferNote {
-  color: var(--c-text);
-  font-size: 0.8rem;
-  text-align: right;
-  overflow-wrap: anywhere;
-}
-
 .phone {
   color: var(--c-text);
   font-size: 0.8rem;
   font-weight: 700;
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+.sendAllBtn {
+  align-self: center;
+  padding: 10px 28px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--c-blue);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+
+  &:hover {
+    opacity: 0.88;
+  }
 }
