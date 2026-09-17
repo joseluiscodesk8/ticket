@@ -18,10 +18,18 @@ import {
   TypewriterIcon,
   WhatsAppIcon,
   BillIcon,
+  TransferIcon,
+  RouteIcon,
+  TrashIcon,
 } from "./icons";
 import { normalizeAddress } from "@/lib/address";
+import { encodeImage, imageFileSize } from "@/lib/image";
+import { isModelId } from "@/lib/models";
+import { parseAmount } from "@/lib/money";
 
 const WHATSAPP_NUMBER = "3001377118";
+const SEND_MAX_DIM = 256;
+const SEND_QUALITY = 1;
 
 const MISSING = {
   address: "No hay dirección",
@@ -29,73 +37,56 @@ const MISSING = {
   price: "No hay precio",
 } as const;
 
-const toBase64 = (blob: Blob) =>
-  new Promise<{ base64: string; mediaType: string }>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result =
-        typeof reader.result === "string" ? reader.result : "";
-      resolve({ base64: result.split(",")[1] ?? "", mediaType: blob.type });
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-
-const compressImage = (file: File, maxDim = 1200, quality = 0.85) =>
-  new Promise<string>((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("Canvas no soportado"));
-        return;
-      }
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("No se pudo leer la imagen"));
-    };
-    img.src = url;
-  });
-
 export default function TicketCapture({ route }: { route: Route }) {
   const cameraRef = useRef<HTMLInputElement>(null);
   // Galería deshabilitada por ahora
   // const galleryRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quotaHit, setQuotaHit] = useState(false);
   const [phoneMenuOpen, setPhoneMenuOpen] = useState(false);
   const [priceMenuOpen, setPriceMenuOpen] = useState(false);
+  const [addressMenuOpen, setAddressMenuOpen] = useState(false);
+  const [delTarget, setDelTarget] = useState<string | null>(null);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const addPhotos = useRoutesStore((s) => s.addPhotos);
+  const removePhoto = useRoutesStore((s) => s.removePhoto);
   const setActiveIndex = useRoutesStore((s) => s.setActiveIndex);
   const updateActive = useRoutesStore((s) => s.updateActive);
+  const modelVersion = useRoutesStore((s) => s.modelVersion);
+  const openTokenPanel = useRoutesStore((s) => s.openTokenPanel);
+  const recordUsage = useRoutesStore((s) => s.recordUsage);
 
   const active = route.photos[route.activeIndex];
 
   const addFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setError(null);
+    setQuotaHit(false);
     setPhoneMenuOpen(false);
     setPriceMenuOpen(false);
     try {
       const added = await Promise.all(
-        Array.from(files).map(async (file) => ({
-          id: crypto.randomUUID(),
-          file,
-          preview: await compressImage(file),
-          address: "",
-          phone: "",
-          price: "",
-        })),
+        Array.from(files).map(async (file) => {
+          const [preview, dims] = await Promise.all([
+            encodeImage(file, 1200, 0.85),
+            imageFileSize(file),
+          ]);
+          return {
+            id: crypto.randomUUID(),
+            file,
+            preview: preview.dataUrl,
+            address: "",
+            phone: "",
+            price: "",
+            total: "",
+            cash: "",
+            transfer: "",
+            width: dims.width,
+            height: dims.height,
+          };
+        }),
       );
       addPhotos(route.id, added);
     } catch (e) {
@@ -105,32 +96,59 @@ export default function TicketCapture({ route }: { route: Route }) {
 
   const getPayload = async (photo: TicketPhoto) => {
     if (photo.file) {
-      return toBase64(photo.file);
+      return encodeImage(photo.file, SEND_MAX_DIM, SEND_QUALITY);
     }
     const [head, base64] = photo.preview.split(",");
     const mediaType = head.match(/data:([^;]+);/)?.[1] ?? "image/jpeg";
-    return { base64: base64 ?? "", mediaType };
+    const bytes = Math.ceil((photo.preview.length * 3) / 4);
+    return {
+      dataUrl: photo.preview,
+      base64: base64 ?? "",
+      mediaType,
+      bytes,
+      width: photo.width ?? 0,
+      height: photo.height ?? 0,
+    };
   };
 
   const transcribeActive = async () => {
     if (!active || loading) return;
     setError(null);
+    setQuotaHit(false);
     setLoading(true);
     try {
-      const { base64, mediaType } = await getPayload(active);
+      const payload = await getPayload(active);
       const res = await fetch("/api/transcribe", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: base64, mediaType }),
+        body: JSON.stringify({
+          image: payload.base64,
+          mediaType: payload.mediaType,
+          model: modelVersion,
+          width: payload.width,
+          height: payload.height,
+          bytes: payload.bytes,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Error al transcribir");
+      if (!res.ok) {
+        const err = new Error(data.error ?? "Error al transcribir") as Error & {
+          status?: number;
+        };
+        err.status = res.status;
+        throw err;
+      }
       updateActive(route.id, {
         address: normalizeAddress(data.address ?? ""),
         phone: data.phone ?? "",
         price: data.price ?? "",
+        total: data.price ?? "",
       });
+      const usedModel = isModelId(data.model) ? data.model : modelVersion;
+      recordUsage(usedModel, data.usage?.total ?? 0);
     } catch (e) {
+      const status = (e as Error & { status?: number }).status;
+      setQuotaHit(status === 429);
       setError(e instanceof Error ? e.message : "Error al transcribir");
     } finally {
       setLoading(false);
@@ -157,6 +175,47 @@ export default function TicketCapture({ route }: { route: Route }) {
           active.address,
         )}`
       : "#";
+
+  const routeAddrs = route.photos
+    .map((p) => p.address.trim())
+    .filter(Boolean);
+
+  const cashVal = active?.cash ?? "";
+  const transferVal = active?.transfer ?? "";
+  const payMode =
+    parseAmount(transferVal) > 0
+      ? "transfer"
+      : parseAmount(cashVal) > 0
+        ? "cash"
+        : "none";
+
+  const restTransfer = (price?: string, total?: string): string => {
+    const p = parseAmount(price ?? "");
+    const t = parseAmount(total ?? "");
+    if (Number.isNaN(p) || Number.isNaN(t)) return "";
+    const diff = t - p;
+    return diff > 0 ? String(diff) : "";
+  };
+
+  const startPress = (id: string) => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = setTimeout(() => setDelTarget(id), 550);
+  };
+  const cancelPress = () => {
+    if (pressTimer.current) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+
+  const mapsRouteLink = () => {
+    if (routeAddrs.length < 2) return "#";
+    const last = routeAddrs[routeAddrs.length - 1];
+    const waypoints = routeAddrs.slice(0, -1);
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+      last,
+    )}&waypoints=${waypoints.map(encodeURIComponent).join("|")}`;
+  };
 
   const waNumberLink = () =>
     active?.phone
@@ -230,12 +289,48 @@ export default function TicketCapture({ route }: { route: Route }) {
           >
             {route.photos.map((photo, i) => (
               <SwiperSlide key={photo.id} className={styles.slide}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className={styles.slideImg}
-                  src={photo.preview}
-                  alt={`Ticket ${i + 1}`}
-                />
+                <div
+                  className={styles.slideInner}
+                  onPointerDown={() => startPress(photo.id)}
+                  onPointerMove={cancelPress}
+                  onPointerUp={cancelPress}
+                  onPointerLeave={cancelPress}
+                  onPointerCancel={cancelPress}
+                  onContextMenu={(e) => e.preventDefault()}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className={styles.slideImg}
+                    src={photo.preview}
+                    alt={`Ticket ${i + 1}`}
+                    draggable={false}
+                  />
+                  {delTarget === photo.id && (
+                    <div className={styles.deleteOverlay}>
+                      <button
+                        type="button"
+                        className={`${styles.menuRound} ${styles.menuRoundDanger}`}
+                        onClick={() => {
+                          removePhoto(route.id, photo.id);
+                          setDelTarget(null);
+                        }}
+                        aria-label={`Eliminar ticket ${i + 1}`}
+                        title="Eliminar foto"
+                      >
+                        <TrashIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.menuRound} ${styles.menuRoundClose}`}
+                        onClick={() => setDelTarget(null)}
+                        aria-label="Cancelar"
+                        title="Cancelar"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </div>
               </SwiperSlide>
             ))}
           </Swiper>
@@ -260,7 +355,20 @@ export default function TicketCapture({ route }: { route: Route }) {
             </motion.span>
           </button>
 
-          {error && <p className={styles.error}>{error}</p>}
+          {error && (
+            <div className={styles.errorWrap}>
+              <p className={styles.error}>{error}</p>
+              {quotaHit && (
+                <button
+                  type="button"
+                  className={styles.quotaBtn}
+                  onClick={openTokenPanel}
+                >
+                  Cambiar de versión
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -282,19 +390,61 @@ export default function TicketCapture({ route }: { route: Route }) {
               placeholder={MISSING.address}
               disabled={!active}
             />
-            <a
-              href={mapsLink()}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-disabled={!active?.address}
+            <button
+              type="button"
+              disabled={!active}
               title="Abrir en Google Maps"
               className={`${styles.actBtn} ${
-                !active?.address ? styles.actBtnDisabled : ""
-              }`}
+                addressMenuOpen ? styles.actBtnActive : ""
+              } ${!active?.address && routeAddrs.length < 2 ? styles.actBtnDisabled : ""}`}
+              onClick={() => setAddressMenuOpen((v) => !v)}
             >
               <PinIcon />
-            </a>
+            </button>
           </div>
+          <AnimatePresence initial={false}>
+            {addressMenuOpen && (
+              <motion.div
+                className={styles.menuRow}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              >
+                <a
+                  href={mapsLink()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setAddressMenuOpen(false)}
+                  aria-label="Abrir dirección sola"
+                  aria-disabled={!active?.address}
+                  title="Abrir esta dirección en Google Maps"
+                  className={`${styles.menuRound} ${
+                    !active?.address ? styles.menuDisabled : ""
+                  }`}
+                >
+                  <PinIcon />
+                </a>
+                <a
+                  href={mapsRouteLink()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setAddressMenuOpen(false)}
+                  aria-label="Abrir ruta con todas las direcciones"
+                  aria-disabled={routeAddrs.length < 2}
+                  title={`Abrir ruta en Google Maps (${routeAddrs.length} direcciones agregadas)`}
+                  className={`${styles.menuRound} ${
+                    routeAddrs.length < 2 ? styles.menuDisabled : ""
+                  }`}
+                >
+                  <RouteIcon />
+                  {routeAddrs.length > 0 && (
+                    <span className={styles.menuBadge}>{routeAddrs.length}</span>
+                  )}
+                </a>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <div className={styles.field}>
@@ -365,27 +515,27 @@ export default function TicketCapture({ route }: { route: Route }) {
               type="button"
               disabled={!active}
               title={
-                active?.payment === "E"
+                payMode === "cash"
                   ? "Efectivo"
-                  : active?.payment === "T"
+                  : payMode === "transfer"
                     ? "Transferencia"
                     : "Marcar pago"
               }
               className={`${styles.actBtn} ${
                 priceMenuOpen ? styles.actBtnActive : ""
               } ${
-                active?.payment === "E"
+                payMode === "cash"
                   ? styles.actBtnCash
-                  : active?.payment === "T"
+                  : payMode === "transfer"
                     ? styles.actBtnTransfer
                     : ""
               }`}
               onClick={() => setPriceMenuOpen((v) => !v)}
             >
-              {active?.payment === "E" ? (
+              {payMode === "cash" ? (
                 <BillIcon />
-              ) : active?.payment === "T" ? (
-                "T"
+              ) : payMode === "transfer" ? (
+                <TransferIcon />
               ) : (
                 <DollarIcon />
               )}
@@ -400,28 +550,38 @@ export default function TicketCapture({ route }: { route: Route }) {
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.18, ease: "easeOut" }}
               >
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateActive(route.id, { payment: "T" });
-                    setPriceMenuOpen(false);
-                  }}
-                  aria-label="Transferencia"
-                  title="Transferencia"
-                >
-                  T
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    updateActive(route.id, { payment: "E" });
-                    setPriceMenuOpen(false);
-                  }}
-                  aria-label="Efectivo"
-                  title="Efectivo"
-                >
-                  <BillIcon />
-                </button>
+                <div className={styles.menuRow}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateActive(route.id, {
+                        cash: active.price,
+                        transfer: restTransfer(active.price, active.total),
+                      });
+                      setPriceMenuOpen(false);
+                    }}
+                    aria-label="Todo en efectivo"
+                    title="Todo en efectivo"
+                    className={`${styles.menuRound} ${styles.menuRoundCash}`}
+                  >
+                    <BillIcon />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updateActive(route.id, {
+                        transfer: active.price,
+                        cash: "",
+                      });
+                      setPriceMenuOpen(false);
+                    }}
+                    aria-label="Todo en transferencia"
+                    title="Todo en transferencia"
+                    className={`${styles.menuRound} ${styles.menuRoundTransfer}`}
+                  >
+                    <TransferIcon />
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

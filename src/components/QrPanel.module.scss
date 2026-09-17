@@ -1,0 +1,108 @@
+.container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: var(--c-text);
+  background: var(--c-glass);
+  border: 2px solid var(--c-border);
+  border-radius: 18px;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+
+  &:hover {
+    background: var(--c-glass-strong);
+    opacity: 0.9;
+  }
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 170px 16px 16px;
+  overflow-y: auto;
+  background: linear-gradient(160deg, #eaf4fb 0%, #d7e7f2 45%, #cbdde9 100%);
+}
+
+.card {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  background: var(--c-glass);
+  border: 2px solid var(--c-border);
+  border-radius: 22px;
+  box-shadow: 0 8px 24px rgba(47, 100, 135, 0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 1.05rem;
+  color: var(--c-text);
+
+  strong {
+    font-weight: 800;
+  }
+}
+
+.close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  font-size: 1rem;
+  color: var(--c-text);
+  background: var(--c-glass-input);
+  border: 2px solid var(--c-border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: var(--c-glass-strong);
+  }
+}
+
+.qr {
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  background: #fff;
+  padding: 8px;
+}
+
+.account {
+  margin: 0;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  color: var(--c-text);
+  overflow-wrap: anywhere;
+}

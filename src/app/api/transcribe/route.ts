@@ -6,6 +6,7 @@ import {
   wrapLanguageModel,
 } from "ai";
 import { z } from "zod";
+import { DEFAULT_MODEL, isModelId } from "@/lib/models";
 
 export const maxDuration = 30;
 
@@ -27,20 +28,25 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
-  const { image, mediaType } = await req.json();
+  const { image, mediaType, model, width, height, bytes } = await req.json();
 
   if (!image || typeof image !== "string") {
     return Response.json({ error: "No image provided" }, { status: 400 });
   }
 
+  const requested = isModelId(model) ? model : undefined;
+  const modelId =
+    requested ??
+    (isModelId(process.env.GEMINI_MODEL) ? process.env.GEMINI_MODEL : DEFAULT_MODEL);
+
   try {
-    const model = wrapLanguageModel({
-      model: google("gemini-3.5-flash"),
+    const modelInstance = wrapLanguageModel({
+      model: google(modelId),
       middleware: extractJsonMiddleware(),
     });
 
     const result = await generateText({
-      model,
+      model: modelInstance,
       output: Output.object({ schema }),
       messages: [
         {
@@ -66,12 +72,40 @@ export async function POST(req: Request) {
       address: extracted.address ?? "",
       phone: extracted.phone ?? "",
       price: extracted.price ?? "",
+      model: modelId,
+      usage: {
+        input: result.usage?.inputTokens ?? 0,
+        output: result.usage?.outputTokens ?? 0,
+        total: result.usage?.totalTokens ?? 0,
+      },
+      echo: {
+        width: typeof width === "number" ? width : null,
+        height: typeof height === "number" ? height : null,
+        bytes: typeof bytes === "number" ? bytes : null,
+      },
     });
   } catch (error) {
     console.error("Transcribe error:", error);
-    return Response.json(
-      { error: "Error al transcribir la imagen" },
-      { status: 500 },
-    );
+    const statusCode = (error as { statusCode?: number })?.statusCode ?? 500;
+    const responseBody = (error as { responseBody?: string })?.responseBody;
+    let quota: unknown = null;
+    if (responseBody) {
+      try {
+        quota = JSON.parse(responseBody);
+      } catch {
+        quota = responseBody;
+      }
+    }
+    if (statusCode === 429) {
+      return Response.json(
+        {
+          error:
+            "Se agotaron los tokens de esta versión. Prueba otra versión o espera a que se renueve el cupo.",
+          quota,
+        },
+        { status: 429 },
+      );
+    }
+    return Response.json({ error: "Error al transcribir la imagen" }, { status: 500 });
   }
 }

@@ -24,6 +24,13 @@
   flex-wrap: wrap;
 }
 
+.rightActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
 .addBtn {
   display: flex;
   align-items: center;

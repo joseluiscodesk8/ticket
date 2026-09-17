@@ -43,22 +43,65 @@
   box-shadow: 0 2px 6px rgba(18, 140, 75, 0.35);
 }
 
-.panel {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 20;
-  width: min(360px, calc(100vw - 48px));
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 170px 16px 16px;
+  overflow-y: auto;
+  background: linear-gradient(160deg, #eaf4fb 0%, #d7e7f2 45%, #cbdde9 100%);
+}
+
+.card {
+  width: 100%;
+  max-width: 420px;
+  max-height: calc(100vh - 64px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 18px;
   background: var(--c-glass);
   border: 2px solid var(--c-border);
-  border-radius: 20px;
-  box-shadow: 0 8px 24px rgba(47, 100, 135, 0.25);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  border-radius: 22px;
+  box-shadow: 0 8px 24px rgba(47, 100, 135, 0.3);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 1.05rem;
+  color: var(--c-text);
+
+  strong {
+    font-weight: 800;
+  }
+}
+
+.close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  font-size: 1rem;
+  color: var(--c-text);
+  background: var(--c-glass-input);
+  border: 2px solid var(--c-border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.2s;
+
+  &:hover {
+    background: var(--c-glass-strong);
+  }
 }
 
 .summary {
@@ -83,14 +126,13 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 260px;
+  gap: 10px;
   overflow-y: auto;
 
   li {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
     font-size: 0.92rem;
     padding-bottom: 8px;
@@ -101,6 +143,14 @@
       padding-bottom: 0;
     }
   }
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+  min-width: 0;
 }
 
 .amount {
@@ -115,4 +165,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 220px;
+}
+
+.transferNote {
+  color: var(--c-text);
+  font-size: 0.8rem;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.phone {
+  color: var(--c-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: right;
+  overflow-wrap: anywhere;
 }

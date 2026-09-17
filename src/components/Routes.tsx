@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import styles from "./Routes.module.scss";
 import TicketCapture from "./TicketCapture";
 import Settlement from "./Settlement";
+import TokenMeter from "./TokenMeter";
+import TokenPanel from "./TokenPanel";
+import QrPanel from "./QrPanel";
 import { useRoutesStore } from "@/store/ticketStore";
+import { TOKEN_TEST_UI } from "@/lib/testFlags";
 
 export default function Routes() {
   const routes = useRoutesStore((s) => s.routes);
@@ -14,6 +18,10 @@ export default function Routes() {
   const removeRoute = useRoutesStore((s) => s.removeRoute);
   const setExpanded = useRoutesStore((s) => s.setExpanded);
   const [showAdd, setShowAdd] = useState(false);
+
+  useEffect(() => {
+    useRoutesStore.persist.rehydrate();
+  }, []);
 
   const nextNumber =
     routes.reduce(
@@ -50,7 +58,11 @@ export default function Routes() {
             </button>
           )}
         </div>
-        <Settlement />
+        <div className={styles.rightActions}>
+          {TOKEN_TEST_UI && <TokenMeter />}
+          <QrPanel />
+          <Settlement />
+        </div>
       </div>
 
       {routes.map((route) => (
@@ -100,6 +112,8 @@ export default function Routes() {
           </AnimatePresence>
         </div>
       ))}
+
+      {TOKEN_TEST_UI && <TokenPanel />}
     </div>
   );
 }

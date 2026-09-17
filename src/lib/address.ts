@@ -14,6 +14,12 @@ export const normalizeAddress = (raw: string): string => {
       return;
     }
 
+    const prefixed = upper.match(/^([A-Z]{1,10})(\d.*)$/);
+    if (prefixed && STREET_TYPES[prefixed[1]]) {
+      out.push(`${STREET_TYPES[prefixed[1]]}${prefixed[2]}`);
+      return;
+    }
+
     if (MARKER.test(upper)) {
       out.push("#");
       return;
@@ -21,12 +27,12 @@ export const normalizeAddress = (raw: string): string => {
 
     const cardinal = upper.match(/^(\d+)([EONS])$/);
     if (cardinal) {
-      out.push(`${cardinal[1]} ${CARDINALS[cardinal[2]]}`);
+      out.push(`${cardinal[1]}${CARDINALS[cardinal[2]]}`);
       return;
     }
 
     if (/^[A-Z]$/.test(upper) && /\d$/.test(prev)) {
-      out[out.length - 1] = CARDINALS[upper] ?? prev + upper;
+      out[out.length - 1] = prev + (CARDINALS[upper] ?? "");
       return;
     }
 
@@ -75,42 +81,44 @@ export const normalizeAddress = (raw: string): string => {
   }
 
   return out
-    .join(" ")
-    .replace(/\s*#\s*/g, " # ")
-    .replace(/\s+/g, " ")
+    .join("")
+    .toLowerCase()
     .replace(/[.,;:]+\s*$/, "")
     .trim();
 };
 
 const STREET_TYPES: Record<string, string> = {
-  C: "Carrera",
-  CRA: "Carrera",
-  KRA: "Carrera",
-  KR: "Carrera",
-  CAR: "Carrera",
-  CR: "Carrera",
-  CL: "Calle",
-  CLL: "Calle",
-  CALLE: "Calle",
-  AV: "Avenida",
-  AVE: "Avenida",
-  AVD: "Avenida",
-  AVDA: "Avenida",
-  DG: "Diagonal",
-  DIAG: "Diagonal",
-  TV: "Transversal",
-  TRA: "Transversal",
-  TRV: "Transversal",
-  TRANSV: "Transversal",
+  C: "carrera",
+  CRA: "carrera",
+  KRA: "carrera",
+  KR: "carrera",
+  CAR: "carrera",
+  CR: "carrera",
+  CRR: "carrera",
+  SR: "carrera",
+  CARRERA: "carrera",
+  CL: "calle",
+  CLL: "calle",
+  CALLE: "calle",
+  AV: "avenida",
+  AVE: "avenida",
+  AVD: "avenida",
+  AVDA: "avenida",
+  DG: "diagonal",
+  DIAG: "diagonal",
+  TV: "transversal",
+  TRA: "transversal",
+  TRV: "transversal",
+  TRANSV: "transversal",
 };
 
 const CARDINALS: Record<string, string> = {
-  E: "Este",
-  O: "Oeste",
-  N: "Norte",
-  S: "Sur",
+  E: "este",
+  O: "oeste",
+  N: "norte",
+  S: "sur",
 };
 
-const CARDINAL_WORDS = ["Este", "Oeste", "Norte", "Sur"];
+const CARDINAL_WORDS = ["este", "oeste", "norte", "sur"];
 
 const MARKER = /^(#|NO\.?|NRO\.?|NUM\.?|NUMERO|N°|Nº)$/i;
