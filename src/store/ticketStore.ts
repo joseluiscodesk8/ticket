@@ -19,6 +19,7 @@ export type TicketPhoto = {
   transfer?: string;
   width?: number;
   height?: number;
+  rotation?: number;
 };
 
 export type Route = {
@@ -34,6 +35,8 @@ export type RoutePatch = Partial<
     "address" | "phone" | "price" | "total" | "cash" | "transfer"
   >
 >;
+
+export type PhotoPatch = Partial<Pick<TicketPhoto, "rotation">>;
 
 type RoutesState = {
   routes: Route[];
@@ -51,6 +54,7 @@ type RoutesState = {
   removePhoto: (routeId: string, photoId: string) => void;
   setActiveIndex: (routeId: string, index: number) => void;
   updateActive: (routeId: string, patch: RoutePatch) => void;
+  updatePhoto: (routeId: string, photoId: string, patch: PhotoPatch) => void;
   setModelVersion: (model: ModelId) => void;
   openTokenPanel: () => void;
   closeTokenPanel: () => void;
@@ -110,6 +114,19 @@ export const useRoutesStore = create<RoutesState>()(
                   ...r,
                   photos: r.photos.map((p, i) =>
                     i === r.activeIndex ? { ...p, ...patch } : p,
+                  ),
+                }
+              : r,
+          ),
+        })),
+      updatePhoto: (routeId, photoId, patch) =>
+        set((state) => ({
+          routes: state.routes.map((r) =>
+            r.id === routeId
+              ? {
+                  ...r,
+                  photos: r.photos.map((p) =>
+                    p.id === photoId ? { ...p, ...patch } : p,
                   ),
                 }
               : r,
@@ -190,6 +207,7 @@ export const useRoutesStore = create<RoutesState>()(
             transfer: p.transfer,
             width: p.width,
             height: p.height,
+            rotation: p.rotation,
           })),
         })),
         expandedId: state.expandedId,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Pagination } from "swiper/modules";
@@ -23,7 +23,7 @@ import {
   TrashIcon,
 } from "./icons";
 import { normalizeAddress } from "@/lib/address";
-import { encodeImage, imageFileSize } from "@/lib/image";
+import { encodeImage, encodeTransformed, imageFileSize } from "@/lib/image";
 import { isModelId } from "@/lib/models";
 import { parseAmount } from "@/lib/money";
 
@@ -48,12 +48,25 @@ export default function TicketCapture({ route }: { route: Route }) {
   const [priceMenuOpen, setPriceMenuOpen] = useState(false);
   const [addressMenuOpen, setAddressMenuOpen] = useState(false);
   const [delTarget, setDelTarget] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<TicketPhoto | null>(null);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
+  const pressSuppressed = useRef(false);
+
+  useEffect(
+    () => () => {
+      if (pressTimer.current) clearTimeout(pressTimer.current);
+      if (tapTimer.current) clearTimeout(tapTimer.current);
+    },
+    [],
+  );
 
   const addPhotos = useRoutesStore((s) => s.addPhotos);
   const removePhoto = useRoutesStore((s) => s.removePhoto);
   const setActiveIndex = useRoutesStore((s) => s.setActiveIndex);
   const updateActive = useRoutesStore((s) => s.updateActive);
+  const updatePhoto = useRoutesStore((s) => s.updatePhoto);
   const modelVersion = useRoutesStore((s) => s.modelVersion);
   const openTokenPanel = useRoutesStore((s) => s.openTokenPanel);
   const recordUsage = useRoutesStore((s) => s.recordUsage);
@@ -95,6 +108,14 @@ export default function TicketCapture({ route }: { route: Route }) {
   };
 
   const getPayload = async (photo: TicketPhoto) => {
+    if ((photo.rotation ?? 0) % 360 !== 0) {
+      return encodeTransformed(
+        photo.file ?? photo.preview,
+        photo.rotation!,
+        SEND_MAX_DIM,
+        SEND_QUALITY,
+      );
+    }
     if (photo.file) {
       return encodeImage(photo.file, SEND_MAX_DIM, SEND_QUALITY);
     }
@@ -197,15 +218,53 @@ export default function TicketCapture({ route }: { route: Route }) {
     return diff > 0 ? String(diff) : "";
   };
 
-  const startPress = (id: string) => {
-    if (pressTimer.current) clearTimeout(pressTimer.current);
-    pressTimer.current = setTimeout(() => setDelTarget(id), 550);
-  };
   const cancelPress = () => {
     if (pressTimer.current) {
       clearTimeout(pressTimer.current);
       pressTimer.current = null;
     }
+  };
+  const startPress = (id: string, e: React.PointerEvent) => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressOrigin.current = { x: e.clientX, y: e.clientY };
+    pressSuppressed.current = false;
+    pressTimer.current = setTimeout(() => {
+      pressSuppressed.current = true;
+      setDelTarget(id);
+    }, 550);
+  };
+  const movePress = (e: React.PointerEvent) => {
+    const origin = pressOrigin.current;
+    if (origin && Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > 10) {
+      pressSuppressed.current = true;
+      cancelPress();
+    }
+  };
+  const endPress = cancelPress;
+
+  const rotate = (photoId: string) => {
+    const photo = route.photos.find((p) => p.id === photoId);
+    if (!photo) return;
+    updatePhoto(route.id, photoId, {
+      rotation: ((((photo.rotation ?? 0) + 90) % 360) + 360) % 360,
+    });
+  };
+
+  const handleTap = (photo: TicketPhoto) => {
+    if (pressSuppressed.current) {
+      pressSuppressed.current = false;
+      return;
+    }
+    if (tapTimer.current) {
+      clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+      rotate(photo.id);
+      return;
+    }
+    tapTimer.current = setTimeout(() => {
+      tapTimer.current = null;
+      setViewer(photo);
+    }, 260);
   };
 
   const mapsRouteLink = () => {
@@ -291,11 +350,12 @@ export default function TicketCapture({ route }: { route: Route }) {
               <SwiperSlide key={photo.id} className={styles.slide}>
                 <div
                   className={styles.slideInner}
-                  onPointerDown={() => startPress(photo.id)}
-                  onPointerMove={cancelPress}
-                  onPointerUp={cancelPress}
-                  onPointerLeave={cancelPress}
-                  onPointerCancel={cancelPress}
+                  onPointerDown={(e) => startPress(photo.id, e)}
+                  onPointerMove={movePress}
+                  onPointerUp={endPress}
+                  onPointerLeave={endPress}
+                  onPointerCancel={endPress}
+                  onClick={() => handleTap(photo)}
                   onContextMenu={(e) => e.preventDefault()}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -304,13 +364,18 @@ export default function TicketCapture({ route }: { route: Route }) {
                     src={photo.preview}
                     alt={`Ticket ${i + 1}`}
                     draggable={false}
+                    style={{
+                      transform: `rotate(${photo.rotation ?? 0}deg)`,
+                      transition: "transform 0.18s ease",
+                    }}
                   />
                   {delTarget === photo.id && (
                     <div className={styles.deleteOverlay}>
                       <button
                         type="button"
                         className={`${styles.menuRound} ${styles.menuRoundDanger}`}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           removePhoto(route.id, photo.id);
                           setDelTarget(null);
                         }}
@@ -322,7 +387,10 @@ export default function TicketCapture({ route }: { route: Route }) {
                       <button
                         type="button"
                         className={`${styles.menuRound} ${styles.menuRoundClose}`}
-                        onClick={() => setDelTarget(null)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDelTarget(null);
+                        }}
                         aria-label="Cancelar"
                         title="Cancelar"
                       >
@@ -599,6 +667,66 @@ export default function TicketCapture({ route }: { route: Route }) {
           Enviar
         </a>
       </div>
+
+      <AnimatePresence>
+        {viewer && (
+          <motion.div
+            className={styles.viewer}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setViewer(null)}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              className={styles.viewerImg}
+              src={viewer.preview}
+              alt="Foto ampliada"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                transform: `rotate(${viewer.rotation ?? 0}deg)`,
+              }}
+            />
+            <div className={styles.viewerActions}>
+              <a
+                className={`${styles.viewerBtn} ${styles.viewerBtnAccent}`}
+                href={viewer.preview}
+                download={`ticket-${viewer.id}.jpg`}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="Descargar foto"
+                title="Descargar foto"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              </a>
+              <button
+                type="button"
+                className={`${styles.viewerBtn} ${styles.viewerBtnClose}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewer(null);
+                }}
+                aria-label="Cerrar"
+                title="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

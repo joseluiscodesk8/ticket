@@ -103,6 +103,61 @@
   border-radius: 16px;
 }
 
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(10, 20, 30, 0.92);
+  cursor: zoom-out;
+}
+
+.viewerImg {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  cursor: default;
+}
+
+.viewerActions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.viewerBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  color: #fff;
+  background: var(--c-blue);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.2s;
+
+  &:hover {
+    opacity: 0.85;
+  }
+}
+
+.viewerBtnClose {
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--c-text);
+  border-color: rgba(120, 150, 170, 0.5);
+}
+
 .errorWrap {
   display: flex;
   flex-direction: column;
