@@ -24,7 +24,9 @@ const schema = z.object({
   price: z
     .string()
     .nullable()
-    .describe("El precio o total que aparece en el ticket, o null si no aparece"),
+    .describe(
+      "El precio o total que aparece en el ticket. Si el ticket indica 'ya pagó' devuelve exactamente 'ya pagó'; si indica 'no paga' devuelve exactamente 'no paga'. Si no aparece ninguna de las dos, devuelve el valor tal como aparece, o null si no aparece ningún precio",
+    ),
 });
 
 export async function POST(req: Request) {
@@ -54,7 +56,7 @@ export async function POST(req: Request) {
           content: [
             {
               type: "text",
-              text: "Mira esta foto de un ticket o recibo y extrae solo estos tres datos:\n1. Nomenclatura (address): SOLO el formato de calle con número, p. ej. 'CRA 33 # 42-8' o 'Calle 50 # 10-20'. NO incluyas nombre de torre, conjunto, edificio, apartamento, barrio ni ciudad. Si no aparece ninguna nomenclatura, devuelve null.\n2. Teléfono (phone).\n3. Precio total (price).\nDevuelve el valor tal como aparece en el ticket. Si un dato no aparece en la foto, devuélvelo como null. No transcribas el texto completo del ticket.",
+              text: "Mira esta foto de un ticket o recibo y extrae solo estos tres datos:\n1. Nomenclatura (address): SOLO el formato de calle con número, p. ej. 'CRA 33 # 42-8' o 'Calle 50 # 10-20'. NO incluyas nombre de torre, conjunto, edificio, apartamento, barrio ni ciudad. Si no aparece ninguna nomenclatura, devuelve null.\n2. Teléfono (phone).\n3. Precio total (price). Si el ticket dice 'ya pagó', devuelve exactamente la palabra 'ya pagó'. Si dice 'no paga', devuelve exactamente 'no paga'. De lo contrario devuelve el valor tal como aparece en el ticket.\nDevuelve el valor tal como aparece en el ticket. Si un dato no aparece en la foto, devuélvelo como null. No transcribas el texto completo del ticket.",
             },
             {
               type: "file",
@@ -106,6 +108,13 @@ export async function POST(req: Request) {
         { status: 429 },
       );
     }
-    return Response.json({ error: "Error al transcribir la imagen" }, { status: 500 });
+    return Response.json(
+      {
+        error: "Error al transcribir la imagen",
+        detail:
+          error instanceof Error ? error.message : String(error ?? "desconocido"),
+      },
+      { status: 500 },
+    );
   }
 }

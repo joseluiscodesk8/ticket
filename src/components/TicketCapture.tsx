@@ -23,9 +23,10 @@ import {
   TrashIcon,
 } from "./icons";
 import { normalizeAddress } from "@/lib/address";
-import { encodeImage, encodeTransformed, imageFileSize } from "@/lib/image";
+import { dataUrlToFile, encodeImage, encodeTransformed, imageFileSize } from "@/lib/image";
 import { isModelId } from "@/lib/models";
-import { parseAmount } from "@/lib/money";
+import { isNotePhrase, parseAmount } from "@/lib/money";
+import { lockScroll } from "@/lib/scroll";
 
 const WHATSAPP_NUMBER = "3001377118";
 const SEND_MAX_DIM = 256;
@@ -61,6 +62,10 @@ export default function TicketCapture({ route }: { route: Route }) {
     },
     [],
   );
+
+  useEffect(() => {
+    lockScroll(Boolean(viewer));
+  }, [viewer]);
 
   const addPhotos = useRoutesStore((s) => s.addPhotos);
   const removePhoto = useRoutesStore((s) => s.removePhoto);
@@ -139,38 +144,98 @@ export default function TicketCapture({ route }: { route: Route }) {
     setLoading(true);
     try {
       const payload = await getPayload(active);
-      const res = await fetch("/api/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image: payload.base64,
-          mediaType: payload.mediaType,
-          model: modelVersion,
-          width: payload.width,
-          height: payload.height,
-          bytes: payload.bytes,
-        }),
-      });
-      const data = await res.json();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 45000);
+      let res: Response;
+      try {
+        res = await fetch("/api/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image: payload.base64,
+            mediaType: payload.mediaType,
+            model: modelVersion,
+            width: payload.width,
+            height: payload.height,
+            bytes: payload.bytes,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+      let data: unknown = null;
+      try {
+        data = await res.json();
+      } catch {
+        // si no llega JSON, dejar data como null y reportar el estado
+      }
       if (!res.ok) {
-        const err = new Error(data.error ?? "Error al transcribir") as Error & {
-          status?: number;
-        };
+        const body =
+          data && typeof data === "object"
+            ? (data as { error?: string; detail?: string })
+            : {};
+        const err = new Error(
+          body.error ?? `Error ${res.status} al transcribir`,
+        ) as Error & { status?: number; data?: unknown };
         err.status = res.status;
+        err.data = data;
+        console.error("Transcripción falló:", {
+          status: res.status,
+          error: body.error,
+          detail: body.detail,
+          datos: data,
+        });
         throw err;
       }
+      const ok = data as {
+        address?: string;
+        phone?: string;
+        price?: string;
+        model?: string;
+        usage?: { total?: number };
+      };
       updateActive(route.id, {
-        address: normalizeAddress(data.address ?? ""),
-        phone: data.phone ?? "",
-        price: data.price ?? "",
-        total: data.price ?? "",
+        address: normalizeAddress(ok.address ?? ""),
+        phone: ok.phone ?? "",
+        price: ok.price ?? "",
+        total: ok.price ?? "",
       });
-      const usedModel = isModelId(data.model) ? data.model : modelVersion;
-      recordUsage(usedModel, data.usage?.total ?? 0);
+      const usedModel = isModelId(ok.model) ? ok.model : modelVersion;
+      recordUsage(usedModel, ok.usage?.total ?? 0);
     } catch (e) {
-      const status = (e as Error & { status?: number }).status;
-      setQuotaHit(status === 429);
-      setError(e instanceof Error ? e.message : "Error al transcribir");
+      const err = e as Error & { status?: number; data?: unknown };
+      if (err.name === "AbortError") {
+        console.error(
+          "Transcripción: tiempo de espera agotado (posible internet lento o servidor saturado)",
+        );
+        setError(
+          "El servidor tardó demasiado en responder. Puede ser internet lento, imagen muy pesada o el modelo saturado. Revisa la consola.",
+        );
+      } else if (err instanceof TypeError && /fetch|Network/i.test(err.message)) {
+        console.error("Transcripción: error de red (sin conexión):", err);
+        setError(
+          "No hubo conexión con el servidor (revisa el internet). Revisa la consola.",
+        );
+      } else {
+        const status = err.status;
+        setQuotaHit(status === 429);
+        const detail =
+          err.data && typeof err.data === "object"
+            ? (err.data as { detail?: string }).detail
+            : undefined;
+        console.error("Transcripción falló:", {
+          status: err.status,
+          message: err.message,
+          detail,
+          datos: err.data,
+        });
+        setError(
+          detail
+            ? `${err.message}. Detalle: ${detail}`
+            : err.message ?? "Error al transcribir",
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -197,6 +262,30 @@ export default function TicketCapture({ route }: { route: Route }) {
         )}`
       : "#";
 
+  const wazeLink = () =>
+    active?.address
+      ? `https://waze.com/ul?q=${encodeURIComponent(active.address)}&navigate=yes`
+      : "#";
+
+  const isMobileDevice = () =>
+    typeof navigator !== "undefined" &&
+    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+  const openInMaps = (googleUrl: string, wazeUrl: string) => {
+    if (!isMobileDevice()) {
+      window.open(googleUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    // En el celular: intenta abrir Waze (si está instalado) y, si después de
+    // un momento sigue en el navegador, cae a Google Maps automáticamente.
+    window.location.href = wazeUrl;
+    setTimeout(() => {
+      if (!document.hidden) {
+        window.location.href = googleUrl;
+      }
+    }, 2400);
+  };
+
   const routeAddrs = route.photos
     .map((p) => p.address.trim())
     .filter(Boolean);
@@ -204,9 +293,9 @@ export default function TicketCapture({ route }: { route: Route }) {
   const cashVal = active?.cash ?? "";
   const transferVal = active?.transfer ?? "";
   const payMode =
-    parseAmount(transferVal) > 0
+    parseAmount(transferVal) > 0 || isNotePhrase(transferVal)
       ? "transfer"
-      : parseAmount(cashVal) > 0
+      : parseAmount(cashVal) > 0 || isNotePhrase(cashVal)
         ? "cash"
         : "none";
 
@@ -246,7 +335,7 @@ export default function TicketCapture({ route }: { route: Route }) {
     const photo = route.photos.find((p) => p.id === photoId);
     if (!photo) return;
     updatePhoto(route.id, photoId, {
-      rotation: ((((photo.rotation ?? 0) + 90) % 360) + 360) % 360,
+      rotation: (photo.rotation ?? 0) + 90,
     });
   };
 
@@ -276,12 +365,43 @@ export default function TicketCapture({ route }: { route: Route }) {
     )}&waypoints=${waypoints.map(encodeURIComponent).join("|")}`;
   };
 
+  const wazeRouteLink = () => {
+    const last = routeAddrs[routeAddrs.length - 1];
+    if (!last) return "#";
+    return `https://waze.com/ul?q=${encodeURIComponent(last)}&navigate=yes`;
+  };
+
   const waNumberLink = () =>
     active?.phone
       ? `https://wa.me/${active.phone.replace(/[^\d]/g, "")}`
       : "#";
 
   const telLink = () => (active?.phone ? `tel:${active.phone}` : "#");
+
+  const savePhoto = async () => {
+    if (!viewer) return;
+    try {
+      const file = await dataUrlToFile(viewer.preview, `ticket-${viewer.id}.jpg`);
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: "Ticket" });
+          return;
+        } catch (e) {
+          if (e && typeof e === "object" && "name" in e && e.name === "AbortError") {
+            return;
+          }
+        }
+      }
+    } catch {
+      // si falla, se cae a la descarga normal
+    }
+    const a = document.createElement("a");
+    a.href = viewer.preview;
+    a.download = `ticket-${viewer.id}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   return (
     <div className={styles.container}>
@@ -483,10 +603,14 @@ export default function TicketCapture({ route }: { route: Route }) {
                   href={mapsLink()}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => setAddressMenuOpen(false)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setAddressMenuOpen(false);
+                    openInMaps(mapsLink(), wazeLink());
+                  }}
                   aria-label="Abrir dirección sola"
                   aria-disabled={!active?.address}
-                  title="Abrir esta dirección en Google Maps"
+                  title="Abrir esta dirección en el mapa (Waze o Google)"
                   className={`${styles.menuRound} ${
                     !active?.address ? styles.menuDisabled : ""
                   }`}
@@ -497,10 +621,14 @@ export default function TicketCapture({ route }: { route: Route }) {
                   href={mapsRouteLink()}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={() => setAddressMenuOpen(false)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setAddressMenuOpen(false);
+                    openInMaps(mapsRouteLink(), wazeRouteLink());
+                  }}
                   aria-label="Abrir ruta con todas las direcciones"
                   aria-disabled={routeAddrs.length < 2}
-                  title={`Abrir ruta en Google Maps (${routeAddrs.length} direcciones agregadas)`}
+                  title={`Abrir ruta en el mapa (Waze o Google, ${routeAddrs.length} direcciones agregadas)`}
                   className={`${styles.menuRound} ${
                     routeAddrs.length < 2 ? styles.menuDisabled : ""
                   }`}
@@ -688,13 +816,15 @@ export default function TicketCapture({ route }: { route: Route }) {
               }}
             />
             <div className={styles.viewerActions}>
-              <a
+              <button
+                type="button"
                 className={`${styles.viewerBtn} ${styles.viewerBtnAccent}`}
-                href={viewer.preview}
-                download={`ticket-${viewer.id}.jpg`}
-                onClick={(e) => e.stopPropagation()}
-                aria-label="Descargar foto"
-                title="Descargar foto"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  savePhoto();
+                }}
+                aria-label="Guardar foto"
+                title="Guardar foto"
               >
                 <svg
                   width="20"
@@ -710,7 +840,7 @@ export default function TicketCapture({ route }: { route: Route }) {
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
-              </a>
+              </button>
               <button
                 type="button"
                 className={`${styles.viewerBtn} ${styles.viewerBtnClose}`}

@@ -156,6 +156,22 @@ export const RouteIcon = () => (
   </svg>
 );
 
+export const WazeIcon = () => (
+  <svg
+    viewBox="0 0 24 24"
+    width="18"
+    height="18"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M12 2 5 21l6-2.6L17 21Z" />
+    <path d="M12 18.4V11" />
+  </svg>
+);
+
 export const TrashIcon = () => (
   <svg
     viewBox="0 0 24 24"

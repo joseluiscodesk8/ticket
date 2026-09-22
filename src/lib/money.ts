@@ -1,3 +1,10 @@
+export const NOTE_PAYED = "ya pagó";
+export const NOTE_NOT_PAY = "no paga";
+export const NOTE_PHRASES: string[] = [NOTE_PAYED, NOTE_NOT_PAY];
+
+export const isNotePhrase = (value: string): boolean =>
+  NOTE_PHRASES.includes(value.trim().toLowerCase());
+
 export const parseAmount = (raw: string): number => {
   const s = raw.replace(/[^0-9.,]/g, "");
   if (!s) return NaN;

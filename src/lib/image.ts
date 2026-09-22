@@ -64,6 +64,17 @@ export const encodeImage = async (
   }
 };
 
+// Convierte un data URL en un archivo, para poder compartirlo ("guardar en
+// la galería" en el celular) o descargarlo.
+export const dataUrlToFile = async (
+  dataUrl: string,
+  filename: string,
+): Promise<File> => {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return new File([blob], filename, { type: blob.type || "image/jpeg" });
+};
+
 // Dimensiones reales del archivo original (lo que tomó la cámara).
 export const imageFileSize = async (file: File) => {
   const url = URL.createObjectURL(file);

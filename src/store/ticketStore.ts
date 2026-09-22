@@ -46,6 +46,7 @@ type RoutesState = {
   overlayOpen: boolean;
   spentLocal: Partial<Record<ModelId, number>>;
   requestsCount: Partial<Record<ModelId, number>>;
+  spentDay: string;
   // acciones
   addRoute: (route: Route) => void;
   removeRoute: (id: string) => void;
@@ -62,6 +63,13 @@ type RoutesState = {
   recordUsage: (model: ModelId, total: number) => void;
 };
 
+const todayKey = () => {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
 export const useRoutesStore = create<RoutesState>()(
   persist(
     (set) => ({
@@ -71,6 +79,7 @@ export const useRoutesStore = create<RoutesState>()(
       overlayOpen: false,
       spentLocal: {},
       requestsCount: {},
+      spentDay: "",
       addRoute: (route) =>
         set((state) => ({
           routes: [...state.routes, route],
@@ -141,21 +150,30 @@ export const useRoutesStore = create<RoutesState>()(
             return {
               spentLocal: { ...state.spentLocal, [model]: 0 },
               requestsCount: { ...state.requestsCount, [model]: 0 },
+              spentDay: todayKey(),
             };
           }
-          return { spentLocal: {}, requestsCount: {} };
+          return { spentLocal: {}, requestsCount: {}, spentDay: todayKey() };
         }),
       recordUsage: (model, total) =>
-        set((state) => ({
-          spentLocal: {
-            ...state.spentLocal,
-            [model]: (state.spentLocal[model] ?? 0) + Math.max(0, total),
-          },
-          requestsCount: {
-            ...state.requestsCount,
-            [model]: (state.requestsCount[model] ?? 0) + 1,
-          },
-        })),
+        set((state) => {
+          const today = todayKey();
+          // cada 24 horas se rehace el contador (acumulados del día anterior)
+          const fresh = state.spentDay === today;
+          const spentLocal = fresh ? state.spentLocal : {};
+          const requestsCount = fresh ? state.requestsCount : {};
+          return {
+            spentDay: today,
+            spentLocal: {
+              ...spentLocal,
+              [model]: (spentLocal[model] ?? 0) + Math.max(0, total),
+            },
+            requestsCount: {
+              ...requestsCount,
+              [model]: (requestsCount[model] ?? 0) + 1,
+            },
+          };
+        }),
     }),
     {
       name: "ticket-transcriptions",
@@ -191,6 +209,7 @@ export const useRoutesStore = create<RoutesState>()(
           ...(isModelId(p?.modelVersion) ? { modelVersion: p.modelVersion } : {}),
           ...(p?.spentLocal ? { spentLocal: p.spentLocal } : {}),
           ...(p?.requestsCount ? { requestsCount: p.requestsCount } : {}),
+          ...(typeof p?.spentDay === "string" ? { spentDay: p.spentDay } : {}),
         };
       },
       partialize: (state) => ({
@@ -214,6 +233,7 @@ export const useRoutesStore = create<RoutesState>()(
         modelVersion: state.modelVersion,
         spentLocal: state.spentLocal,
         requestsCount: state.requestsCount,
+        spentDay: state.spentDay,
       }),
     },
   ),
@@ -241,5 +261,7 @@ export const getLimit = (s: RoutesState): number | null => {
 export const getRemaining = (s: RoutesState): number | null => {
   const limit = DEFAULT_MANUAL_QUOTAS[s.modelVersion];
   if (limit <= 0) return null;
+  // Los tokens se rehacen cada 24 horas.
+  if (s.spentDay !== todayKey()) return limit;
   return Math.max(0, limit - (s.spentLocal[s.modelVersion] ?? 0));
 };

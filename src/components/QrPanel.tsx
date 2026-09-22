@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import styles from "./QrPanel.module.scss";
+import { lockScroll } from "@/lib/scroll";
 
 // TODO: pon aquí tu número de cuenta de ahorros. Es lo que aparece
 // debajo del código QR. Texto libre, p. ej. "1234 5678 9012 3456".
@@ -10,6 +11,10 @@ const SAVINGS_ACCOUNT = "32474171418";
 
 export default function QrPanel() {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    lockScroll(open);
+  }, [open]);
 
   return (
     <div className={styles.container}>

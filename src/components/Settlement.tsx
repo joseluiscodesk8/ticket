@@ -1,16 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import styles from "./Settlement.module.scss";
 import { useRoutesStore } from "@/store/ticketStore";
-import { formatCOP, parseAmount } from "@/lib/money";
+import { formatCOP, isNotePhrase, parseAmount } from "@/lib/money";
+import { lockScroll } from "@/lib/scroll";
 import { DollarIcon } from "./icons";
 
 const WHATSAPP_NUMBER = "3001377118";
 
 type Row = {
-  amount: number;
+  value: number;
+  phrase?: string;
   address: string;
   phone: string;
 };
@@ -19,30 +21,49 @@ export default function Settlement() {
   const routes = useRoutesStore((s) => s.routes);
   const [open, setOpen] = useState(false);
 
+  useEffect(() => {
+    lockScroll(open);
+  }, [open]);
+
   const rows = useMemo(() => {
     const cash: Row[] = [];
     const transfers: Row[] = [];
     for (const route of routes) {
       for (const photo of route.photos) {
-        const cashAmt = Number.isNaN(parseAmount(photo.cash ?? ""))
-          ? 0
-          : parseAmount(photo.cash ?? "");
-        const transferAmt = Number.isNaN(parseAmount(photo.transfer ?? ""))
-          ? 0
-          : parseAmount(photo.transfer ?? "");
         const address = photo.address.trim();
         const phone = photo.phone.trim();
-        if (cashAmt > 0) cash.push({ amount: cashAmt, address, phone });
-        if (transferAmt > 0)
-          transfers.push({ amount: transferAmt, address, phone });
+        const addRow = (list: Row[], raw: string) => {
+          const amt = parseAmount(raw);
+          if (amt > 0) {
+            list.push({ value: amt, address, phone });
+          } else if (isNotePhrase(raw)) {
+            list.push({
+              value: 0,
+              phrase: raw.trim().toLowerCase(),
+              address,
+              phone,
+            });
+          }
+        };
+        addRow(cash, photo.cash ?? "");
+        addRow(transfers, photo.transfer ?? "");
       }
     }
     return { cash, transfers };
   }, [routes]);
 
-  const totalCash = rows.cash.reduce((sum, r) => sum + r.amount, 0);
-  const totalTransfer = rows.transfers.reduce((sum, r) => sum + r.amount, 0);
+  const totalCash = rows.cash.reduce(
+    (sum, r) => sum + (r.phrase ? 0 : r.value),
+    0,
+  );
+  const totalTransfer = rows.transfers.reduce(
+    (sum, r) => sum + (r.phrase ? 0 : r.value),
+    0,
+  );
   const hasRows = rows.cash.length > 0 || rows.transfers.length > 0;
+
+  const renderAmount = (row: Row) =>
+    row.phrase ? row.phrase : formatCOP(row.value);
 
   const transferWaLink = () => {
     const lines: string[] = [];
@@ -51,7 +72,7 @@ export default function Settlement() {
       lines.push(
         `${row.address || "Sin dirección"}${row.phone ? ` ${row.phone}` : ""}`,
       );
-      lines.push(`Transferido: ${formatCOP(row.amount)}`);
+      lines.push(`Transferido: ${renderAmount(row)}`);
     });
     return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
       lines.join("\n"),
@@ -117,7 +138,7 @@ export default function Settlement() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: 0.04 * i, duration: 0.18 }}
                     >
-                      <span className={styles.amount}>{formatCOP(e.amount)}</span>
+                      <span className={styles.amount}>{renderAmount(e)}</span>
                       <div className={styles.meta}>
                         <span className={styles.address}>
                           {e.address || "Sin dirección"}
@@ -139,7 +160,7 @@ export default function Settlement() {
                       <span
                         className={`${styles.amount} ${styles.amountTransfer}`}
                       >
-                        {formatCOP(e.amount)}
+                        {renderAmount(e)}
                       </span>
                       <div className={styles.meta}>
                         <span className={styles.address}>

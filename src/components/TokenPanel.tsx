@@ -1,15 +1,21 @@
 "use client";
 
+import { useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import styles from "./TokenPanel.module.scss";
 import { useRoutesStore } from "@/store/ticketStore";
 import { MODELS } from "@/lib/models";
+import { lockScroll } from "@/lib/scroll";
 
 export default function TokenPanel() {
   const open = useRoutesStore((s) => s.overlayOpen);
   const closeTokenPanel = useRoutesStore((s) => s.closeTokenPanel);
   const modelVersion = useRoutesStore((s) => s.modelVersion);
   const setModelVersion = useRoutesStore((s) => s.setModelVersion);
+
+  useEffect(() => {
+    lockScroll(open);
+  }, [open]);
 
   const activeLabel =
     MODELS.find((m) => m.id === modelVersion)?.label ?? modelVersion;
