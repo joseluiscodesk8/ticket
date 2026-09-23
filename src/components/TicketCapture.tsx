@@ -26,6 +26,7 @@ import { normalizeAddress } from "@/lib/address";
 import { dataUrlToFile, encodeImage, encodeTransformed, imageFileSize } from "@/lib/image";
 import { isModelId } from "@/lib/models";
 import { isNotePhrase, parseAmount } from "@/lib/money";
+import { getMapsPref, setMapsPref, type MapsApp } from "@/lib/mapsPrefs";
 import { lockScroll } from "@/lib/scroll";
 
 const WHATSAPP_NUMBER = "3001377118";
@@ -50,6 +51,7 @@ export default function TicketCapture({ route }: { route: Route }) {
   const [addressMenuOpen, setAddressMenuOpen] = useState(false);
   const [delTarget, setDelTarget] = useState<string | null>(null);
   const [viewer, setViewer] = useState<TicketPhoto | null>(null);
+  const [mapApp, setMapApp] = useState<MapsApp>(getMapsPref);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -271,19 +273,37 @@ export default function TicketCapture({ route }: { route: Route }) {
     typeof navigator !== "undefined" &&
     /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
+  // App de mapas que el dispositivo "confirma" que tiene. Al abrirse con
+  // enlace universal, si la app no está instalada el navegador queda en la
+  // pestaña web; ahí detectamos que no la tiene, cambiamos a la otra app y
+  // lo recordamos (se prioriza la que sí funciona en ese dispositivo).
   const openInMaps = (googleUrl: string, wazeUrl: string) => {
     if (!isMobileDevice()) {
       window.open(googleUrl, "_blank", "noopener,noreferrer");
       return;
     }
-    // En el celular: intenta abrir Waze (si está instalado) y, si después de
-    // un momento sigue en el navegador, cae a Google Maps automáticamente.
-    window.location.href = wazeUrl;
-    setTimeout(() => {
-      if (!document.hidden) {
-        window.location.href = googleUrl;
-      }
-    }, 2400);
+    const seq: MapsApp[] =
+      mapApp === "waze" ? ["waze", "google"] : ["google", "waze"];
+    const tryOpen = (i: number) => {
+      const app = seq[i];
+      if (!app) return;
+      const url = app === "waze" ? wazeUrl : googleUrl;
+      const win = window.open(url, "_blank");
+      setTimeout(() => {
+        if (win == null) return;
+        if (win.closed) return; // la app tomó el control o cerró la pestaña
+        if (document.hasFocus()) {
+          // Sigue abierta la pestaña web (no se abrió la app): probamos la otra
+          win.close();
+          if (seq[i + 1]) {
+            setMapsPref(seq[i + 1]);
+            setMapApp(seq[i + 1]);
+            tryOpen(i + 1);
+          }
+        }
+      }, 1400);
+    };
+    tryOpen(0);
   };
 
   const routeAddrs = route.photos
