@@ -26,7 +26,6 @@ import { normalizeAddress } from "@/lib/address";
 import { dataUrlToFile, encodeImage, encodeTransformed, imageFileSize } from "@/lib/image";
 import { isModelId } from "@/lib/models";
 import { isNotePhrase, parseAmount } from "@/lib/money";
-import { getMapsPref, setMapsPref, type MapsApp } from "@/lib/mapsPrefs";
 import { lockScroll } from "@/lib/scroll";
 
 const WHATSAPP_NUMBER = "3001377118";
@@ -51,7 +50,6 @@ export default function TicketCapture({ route }: { route: Route }) {
   const [addressMenuOpen, setAddressMenuOpen] = useState(false);
   const [delTarget, setDelTarget] = useState<string | null>(null);
   const [viewer, setViewer] = useState<TicketPhoto | null>(null);
-  const [mapApp, setMapApp] = useState<MapsApp>(getMapsPref);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
@@ -264,48 +262,6 @@ export default function TicketCapture({ route }: { route: Route }) {
         )}`
       : "#";
 
-  const wazeLink = () =>
-    active?.address
-      ? `https://waze.com/ul?q=${encodeURIComponent(active.address)}&navigate=yes`
-      : "#";
-
-  const isMobileDevice = () =>
-    typeof navigator !== "undefined" &&
-    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-
-  // App de mapas que el dispositivo "confirma" que tiene. Al abrirse con
-  // enlace universal, si la app no está instalada el navegador queda en la
-  // pestaña web; ahí detectamos que no la tiene, cambiamos a la otra app y
-  // lo recordamos (se prioriza la que sí funciona en ese dispositivo).
-  const openInMaps = (googleUrl: string, wazeUrl: string) => {
-    if (!isMobileDevice()) {
-      window.open(googleUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-    const seq: MapsApp[] =
-      mapApp === "waze" ? ["waze", "google"] : ["google", "waze"];
-    const tryOpen = (i: number) => {
-      const app = seq[i];
-      if (!app) return;
-      const url = app === "waze" ? wazeUrl : googleUrl;
-      const win = window.open(url, "_blank");
-      setTimeout(() => {
-        if (win == null) return;
-        if (win.closed) return; // la app tomó el control o cerró la pestaña
-        if (document.hasFocus()) {
-          // Sigue abierta la pestaña web (no se abrió la app): probamos la otra
-          win.close();
-          if (seq[i + 1]) {
-            setMapsPref(seq[i + 1]);
-            setMapApp(seq[i + 1]);
-            tryOpen(i + 1);
-          }
-        }
-      }, 1400);
-    };
-    tryOpen(0);
-  };
-
   const routeAddrs = route.photos
     .map((p) => p.address.trim())
     .filter(Boolean);
@@ -383,12 +339,6 @@ export default function TicketCapture({ route }: { route: Route }) {
     return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
       last,
     )}&waypoints=${waypoints.map(encodeURIComponent).join("|")}`;
-  };
-
-  const wazeRouteLink = () => {
-    const last = routeAddrs[routeAddrs.length - 1];
-    if (!last) return "#";
-    return `https://waze.com/ul?q=${encodeURIComponent(last)}&navigate=yes`;
   };
 
   const waNumberLink = () =>
@@ -623,14 +573,10 @@ export default function TicketCapture({ route }: { route: Route }) {
                   href={mapsLink()}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setAddressMenuOpen(false);
-                    openInMaps(mapsLink(), wazeLink());
-                  }}
+                  onClick={() => setAddressMenuOpen(false)}
                   aria-label="Abrir dirección sola"
                   aria-disabled={!active?.address}
-                  title="Abrir esta dirección en el mapa (Waze o Google)"
+                  title="Abrir esta dirección en Google Maps"
                   className={`${styles.menuRound} ${
                     !active?.address ? styles.menuDisabled : ""
                   }`}
@@ -641,14 +587,10 @@ export default function TicketCapture({ route }: { route: Route }) {
                   href={mapsRouteLink()}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setAddressMenuOpen(false);
-                    openInMaps(mapsRouteLink(), wazeRouteLink());
-                  }}
+                  onClick={() => setAddressMenuOpen(false)}
                   aria-label="Abrir ruta con todas las direcciones"
                   aria-disabled={routeAddrs.length < 2}
-                  title={`Abrir ruta en el mapa (Waze o Google, ${routeAddrs.length} direcciones agregadas)`}
+                  title={`Abrir ruta en Google Maps (${routeAddrs.length} direcciones agregadas)`}
                   className={`${styles.menuRound} ${
                     routeAddrs.length < 2 ? styles.menuDisabled : ""
                   }`}
