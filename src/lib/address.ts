@@ -25,6 +25,16 @@ export const normalizeAddress = (raw: string): string => {
       return;
     }
 
+    if (upper === "N") {
+      out.push("#");
+      return;
+    }
+
+    if (SEPARATOR.test(token) && /\d$/.test(prev)) {
+      out.push("#");
+      return;
+    }
+
     const cardinal = upper.match(/^(\d+)([EONS])$/);
     if (cardinal) {
       out.push(`${cardinal[1]}${CARDINALS[cardinal[2]]}`);
@@ -90,7 +100,10 @@ export const normalizeAddress = (raw: string): string => {
 const STREET_TYPES: Record<string, string> = {
   C: "carrera",
   CRA: "carrera",
+  CRAA: "carrera",
+  CRRA: "carrera",
   KRA: "carrera",
+  KRR: "carrera",
   KR: "carrera",
   CAR: "carrera",
   CR: "carrera",
@@ -99,17 +112,31 @@ const STREET_TYPES: Record<string, string> = {
   CARRERA: "carrera",
   CL: "calle",
   CLL: "calle",
+  CLLE: "calle",
+  CAL: "calle",
   CALLE: "calle",
   AV: "avenida",
   AVE: "avenida",
   AVD: "avenida",
   AVDA: "avenida",
+  AVEN: "avenida",
+  AVEND: "avenida",
+  AVENIDA: "avenida",
   DG: "diagonal",
+  DGO: "diagonal",
+  DGNA: "diagonal",
+  DGN: "diagonal",
+  DGNAL: "diagonal",
   DIAG: "diagonal",
+  DIAGONAL: "diagonal",
   TV: "transversal",
   TRA: "transversal",
+  TRAV: "transversal",
   TRV: "transversal",
+  TRSV: "transversal",
+  TRVN: "transversal",
   TRANSV: "transversal",
+  TRANSVERSAL: "transversal",
 };
 
 const CARDINALS: Record<string, string> = {
@@ -122,3 +149,5 @@ const CARDINALS: Record<string, string> = {
 const CARDINAL_WORDS = ["este", "oeste", "norte", "sur"];
 
 const MARKER = /^(#|NO\.?|NRO\.?|NUM\.?|NUMERO|N°|Nº)$/i;
+
+const SEPARATOR = /^[·xX,/—–-]+$/;

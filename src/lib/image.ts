@@ -86,6 +86,62 @@ export const imageFileSize = async (file: File) => {
   }
 };
 
+// Codifica la imagen recortada (crop normalizado 0..1 respecto a la imagen
+// original) y luego rotada, escalada a maxDim. El recorte elimina el espacio
+// sobrante que el usuario marcó al arrastrar los bordes.
+export const encodeCropped = async (
+  source: File | string,
+  crop: { x: number; y: number; w: number; h: number } | null | undefined,
+  rotate: number,
+  maxDim: number,
+  quality: number,
+): Promise<EncodedImage> => {
+  const url = typeof source === "string" ? source : URL.createObjectURL(source);
+  try {
+    const img = await loadImage(url);
+    const c = crop ?? { x: 0, y: 0, w: 1, h: 1 };
+    const sx = Math.max(0, Math.min(1, c.x)) * img.naturalWidth;
+    const sy = Math.max(0, Math.min(1, c.y)) * img.naturalHeight;
+    const sw = Math.min(img.naturalWidth - sx, c.w * img.naturalWidth);
+    const sh = Math.min(img.naturalHeight - sy, c.h * img.naturalHeight);
+    const srcW = Math.max(1, Math.round(sw));
+    const srcH = Math.max(1, Math.round(sh));
+    const deg = ((rotate % 360) + 360) % 360;
+    const swap = deg % 180 !== 0;
+    const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+    const baseW = Math.max(1, Math.round(srcW * scale));
+    const baseH = Math.max(1, Math.round(srcH * scale));
+    const width = swap ? baseH : baseW;
+    const height = swap ? baseW : baseH;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas no soportado");
+    ctx.translate(width / 2, height / 2);
+    ctx.rotate((deg * Math.PI) / 180);
+    ctx.drawImage(img, sx, sy, srcW, srcH, -baseW / 2, -baseH / 2, baseW, baseH);
+    const blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("No se pudo comprimir"))),
+        "image/jpeg",
+        quality,
+      ),
+    );
+    const dataUrl = await readAsDataURL(blob);
+    return {
+      dataUrl,
+      base64: dataUrl.split(",")[1] ?? "",
+      mediaType: blob.type || "image/jpeg",
+      bytes: blob.size,
+      width,
+      height,
+    };
+  } finally {
+    if (typeof source !== "string") URL.revokeObjectURL(url);
+  }
+};
+
 // Codifica la imagen rotada (grados: 90/180/270) para que la que se envía
 // a transcribir salga con la orientación corregida.
 export const encodeTransformed = async (

@@ -20,6 +20,7 @@ export type TicketPhoto = {
   width?: number;
   height?: number;
   rotation?: number;
+  crop?: { x: number; y: number; w: number; h: number } | null;
 };
 
 export type Route = {
@@ -36,7 +37,7 @@ export type RoutePatch = Partial<
   >
 >;
 
-export type PhotoPatch = Partial<Pick<TicketPhoto, "rotation">>;
+export type PhotoPatch = Partial<Pick<TicketPhoto, "rotation" | "crop">>;
 
 type RoutesState = {
   routes: Route[];
@@ -227,6 +228,7 @@ export const useRoutesStore = create<RoutesState>()(
             width: p.width,
             height: p.height,
             rotation: p.rotation,
+            crop: p.crop,
           })),
         })),
         expandedId: state.expandedId,

@@ -23,7 +23,7 @@ import {
   TrashIcon,
 } from "./icons";
 import { normalizeAddress } from "@/lib/address";
-import { dataUrlToFile, encodeImage, encodeTransformed, imageFileSize } from "@/lib/image";
+import { dataUrlToFile, encodeCropped, encodeImage, encodeTransformed, imageFileSize } from "@/lib/image";
 import { isModelId } from "@/lib/models";
 import { isNotePhrase, parseAmount } from "@/lib/money";
 import { lockScroll } from "@/lib/scroll";
@@ -31,6 +31,10 @@ import { lockScroll } from "@/lib/scroll";
 const WHATSAPP_NUMBER = "3001377118";
 const SEND_MAX_DIM = 256;
 const SEND_QUALITY = 1;
+
+// Quita todos los espacios del teléfono: siempre debe quedar pegado.
+export const normalizePhone = (raw: string): string =>
+  raw.replace(/\s+/g, "");
 
 const MISSING = {
   address: "No hay dirección",
@@ -50,10 +54,19 @@ export default function TicketCapture({ route }: { route: Route }) {
   const [addressMenuOpen, setAddressMenuOpen] = useState(false);
   const [delTarget, setDelTarget] = useState<string | null>(null);
   const [viewer, setViewer] = useState<TicketPhoto | null>(null);
+  const [cropActive, setCropActive] = useState<string | null>(null);
   const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   const pressSuppressed = useRef(false);
+  const cropDrag = useRef<{
+    photoId: string;
+    edge: "n" | "s" | "e" | "w";
+    startX: number;
+    startY: number;
+    rect: { left: number; top: number; w: number; h: number };
+    crop: { x: number; y: number; w: number; h: number };
+  } | null>(null);
 
   useEffect(
     () => () => {
@@ -113,6 +126,15 @@ export default function TicketCapture({ route }: { route: Route }) {
   };
 
   const getPayload = async (photo: TicketPhoto) => {
+    if (photo.crop) {
+      return encodeCropped(
+        photo.file ?? photo.preview,
+        photo.crop,
+        photo.rotation ?? 0,
+        SEND_MAX_DIM,
+        SEND_QUALITY,
+      );
+    }
     if ((photo.rotation ?? 0) % 360 !== 0) {
       return encodeTransformed(
         photo.file ?? photo.preview,
@@ -197,7 +219,7 @@ export default function TicketCapture({ route }: { route: Route }) {
       };
       updateActive(route.id, {
         address: normalizeAddress(ok.address ?? ""),
-        phone: ok.phone ?? "",
+        phone: normalizePhone(ok.phone ?? ""),
         price: ok.price ?? "",
         total: ok.price ?? "",
       });
@@ -373,6 +395,67 @@ export default function TicketCapture({ route }: { route: Route }) {
     a.remove();
   };
 
+  const MIN_CROP = 0.06;
+
+  const clamp = (v: number, min: number, max: number) =>
+    Math.min(Math.max(v, min), max);
+
+  const startCropDrag = (
+    photo: TicketPhoto,
+    edge: "n" | "s" | "e" | "w",
+    e: React.PointerEvent,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setCropActive(photo.id);
+    const img = e.currentTarget.parentElement?.querySelector("img");
+    const r = img?.getBoundingClientRect();
+    if (!r || r.width === 0 || r.height === 0) return;
+    cropDrag.current = {
+      photoId: photo.id,
+      edge,
+      startX: e.clientX,
+      startY: e.clientY,
+      rect: { left: r.left, top: r.top, w: r.width, h: r.height },
+      crop: photo.crop ?? { x: 0, y: 0, w: 1, h: 1 },
+    };
+  };
+
+  const moveCropDrag = (e: React.PointerEvent) => {
+    const d = cropDrag.current;
+    if (!d) return;
+    const isX = d.edge === "e" || d.edge === "w";
+    const v = (isX ? e.clientX : e.clientY) - (isX ? d.rect.left : d.rect.top);
+    const vMax = isX ? d.rect.w : d.rect.h;
+    const pos = clamp(v / vMax, 0, 1);
+    const c = { ...d.crop };
+    if (isX) {
+      const right = c.x + c.w;
+      const a = d.edge === "e" ? right - pos : pos - c.x;
+      const aMin = -Math.min(c.x, 1 - right);
+      const aa = clamp(a, aMin, (c.w - MIN_CROP) / 2);
+      c.x += aa;
+      c.w -= 2 * aa;
+    } else {
+      const bottom = c.y + c.h;
+      const a = d.edge === "s" ? bottom - pos : pos - c.y;
+      const aMin = -Math.min(c.y, 1 - bottom);
+      const aa = clamp(a, aMin, (c.h - MIN_CROP) / 2);
+      c.y += aa;
+      c.h -= 2 * aa;
+    }
+    updatePhoto(route.id, d.photoId, { crop: c });
+  };
+
+  const endCropDrag = (e: React.PointerEvent) => {
+    cropDrag.current = null;
+    setCropActive(null);
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
   return (
     <div className={styles.container}>
       <div className={styles.cameraButtons}>
@@ -454,10 +537,89 @@ export default function TicketCapture({ route }: { route: Route }) {
                     src={photo.preview}
                     alt={`Ticket ${i + 1}`}
                     draggable={false}
+                    style={
+                      photo.crop
+                        ? {
+                            clipPath: `inset(${photo.crop.y * 100}% ${
+                              (1 - photo.crop.x - photo.crop.w) * 100
+                            }% ${(1 - photo.crop.y - photo.crop.h) * 100}% ${
+                              photo.crop.x * 100
+                            }%)`,
+                            transform: `rotate(${photo.rotation ?? 0}deg)`,
+                            transition: "transform 0.18s ease",
+                          }
+                        : {
+                            transform: `rotate(${photo.rotation ?? 0}deg)`,
+                            transition: "transform 0.18s ease",
+                          }
+                    }
+                  />
+                  {cropActive === photo.id && (
+                    <div
+                      className={styles.cropGuide}
+                      style={{
+                        top: `${(photo.crop?.y ?? 0) * 100}%`,
+                        left: `${(photo.crop?.x ?? 0) * 100}%`,
+                        width: `${(photo.crop?.w ?? 1) * 100}%`,
+                        height: `${(photo.crop?.h ?? 1) * 100}%`,
+                      }}
+                    />
+                  )}
+                  <div
+                    className={`${styles.cropEdge} ${styles.cropEdgeN}`}
                     style={{
-                      transform: `rotate(${photo.rotation ?? 0}deg)`,
-                      transition: "transform 0.18s ease",
+                      top: `${(photo.crop?.y ?? 0) * 100}%`,
+                      left: `${(photo.crop?.x ?? 0) * 100}%`,
+                      width: `${(photo.crop?.w ?? 1) * 100}%`,
                     }}
+                    onPointerDown={(e) => startCropDrag(photo, "n", e)}
+                    onPointerMove={moveCropDrag}
+                    onPointerUp={endCropDrag}
+                    onPointerCancel={endCropDrag}
+                    onClick={(e) => e.stopPropagation()}
+                    onContextMenu={(e) => e.preventDefault()}
+                  />
+                  <div
+                    className={`${styles.cropEdge} ${styles.cropEdgeS}`}
+                    style={{
+                      top: `${((photo.crop?.y ?? 0) + (photo.crop?.h ?? 1)) * 100}%`,
+                      left: `${(photo.crop?.x ?? 0) * 100}%`,
+                      width: `${(photo.crop?.w ?? 1) * 100}%`,
+                    }}
+                    onPointerDown={(e) => startCropDrag(photo, "s", e)}
+                    onPointerMove={moveCropDrag}
+                    onPointerUp={endCropDrag}
+                    onPointerCancel={endCropDrag}
+                    onClick={(e) => e.stopPropagation()}
+                    onContextMenu={(e) => e.preventDefault()}
+                  />
+                  <div
+                    className={`${styles.cropEdge} ${styles.cropEdgeE}`}
+                    style={{
+                      left: `${((photo.crop?.x ?? 0) + (photo.crop?.w ?? 1)) * 100}%`,
+                      top: `${(photo.crop?.y ?? 0) * 100}%`,
+                      height: `${(photo.crop?.h ?? 1) * 100}%`,
+                    }}
+                    onPointerDown={(e) => startCropDrag(photo, "e", e)}
+                    onPointerMove={moveCropDrag}
+                    onPointerUp={endCropDrag}
+                    onPointerCancel={endCropDrag}
+                    onClick={(e) => e.stopPropagation()}
+                    onContextMenu={(e) => e.preventDefault()}
+                  />
+                  <div
+                    className={`${styles.cropEdge} ${styles.cropEdgeW}`}
+                    style={{
+                      left: `${(photo.crop?.x ?? 0) * 100}%`,
+                      top: `${(photo.crop?.y ?? 0) * 100}%`,
+                      height: `${(photo.crop?.h ?? 1) * 100}%`,
+                    }}
+                    onPointerDown={(e) => startCropDrag(photo, "w", e)}
+                    onPointerMove={moveCropDrag}
+                    onPointerUp={endCropDrag}
+                    onPointerCancel={endCropDrag}
+                    onClick={(e) => e.stopPropagation()}
+                    onContextMenu={(e) => e.preventDefault()}
                   />
                   {delTarget === photo.id && (
                     <div className={styles.deleteOverlay}>
@@ -611,7 +773,9 @@ export default function TicketCapture({ route }: { route: Route }) {
             <input
               type="tel"
               value={active?.phone ?? ""}
-              onChange={(e) => updateActive(route.id, { phone: e.target.value })}
+              onChange={(e) =>
+                  updateActive(route.id, { phone: normalizePhone(e.target.value) })
+                }
               placeholder={MISSING.phone}
               disabled={!active}
             />
